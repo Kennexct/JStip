@@ -86,7 +86,6 @@ export function ProfileScreen() {
     if (savedAvatar) {
       setAvatar(savedAvatar);
     }
-
     // 1. Loading Trip location settings
     const savedTrip = localStorage.getItem('jastip_trip_settings');
     if (savedTrip) {
@@ -172,7 +171,6 @@ export function ProfileScreen() {
       reader.readAsDataURL(file);
     }
   };
-
   const menuItems = [
     { 
       icon: ShieldCheck, 

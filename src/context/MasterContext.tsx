@@ -9,6 +9,7 @@ export interface MasterContextType {
   catalogItems: any[];
   wishlistItems: any[];
   tripSettings: any;
+  boughtIds: string[];
   refreshData: () => Promise<void>;
   saveSettings: (settings: any) => Promise<void>;
   saveItem: (item: any) => Promise<void>;
@@ -16,6 +17,7 @@ export interface MasterContextType {
   saveWishlist: (item: any) => Promise<void>;
   saveSale: (sale: any) => Promise<void>;
   saveExpense: (expense: any) => Promise<void>;
+  toggleBoughtId: (id: string) => void;
 }
 
 const MasterContext = createContext<MasterContextType | undefined>(undefined);
@@ -30,6 +32,26 @@ export function MasterProvider({ children }: { children: ReactNode }) {
     trip: { origin: 'Seoul', destination: 'Jakarta', weightLimit: 15, date: '22 May 2026' },
     currency: { code: 'SGD', symbol: 'S$', manualRate: 13500 }
   });
+  const [boughtIds, setBoughtIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('jastip_checklist_bought_states');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        // ignore
+      }
+    }
+    return [];
+  });
+
+  const toggleBoughtId = (id: string) => {
+    setBoughtIds((prev) => {
+      const updated = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      localStorage.setItem('jastip_checklist_bought_states', JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   const refreshData = async () => {
     try {
@@ -113,6 +135,36 @@ export function MasterProvider({ children }: { children: ReactNode }) {
     try {
       await db.saveSale(sale);
       setSales([sale, ...sales]);
+
+      if (sale.items && Array.isArray(sale.items)) {
+        let updatedWishlist = [...wishlistItems];
+        const newlyBoughtWishlistIds: string[] = [];
+
+        for (const item of sale.items) {
+          const matchedWishlist = updatedWishlist.filter(
+            w => w.name.toLowerCase() === item.name.toLowerCase() && w.status !== 'found'
+          );
+
+          for (const wishItem of matchedWishlist) {
+            const updatedWishItem = { ...wishItem, status: 'found' as const };
+            await db.saveWishlist(updatedWishItem);
+            
+            updatedWishlist = updatedWishlist.map(w => w.id === wishItem.id ? updatedWishItem : w);
+            newlyBoughtWishlistIds.push(`chk_wishlist_${wishItem.id}`);
+            
+            toast.success(`Wishlist item "${wishItem.name}" automatically marked as FOUND & BOUGHT!`);
+          }
+        }
+
+        if (newlyBoughtWishlistIds.length > 0) {
+          setWishlistItems(updatedWishlist);
+          setBoughtIds(prev => {
+            const updated = Array.from(new Set([...prev, ...newlyBoughtWishlistIds]));
+            localStorage.setItem('jastip_checklist_bought_states', JSON.stringify(updated));
+            return updated;
+          });
+        }
+      }
     } catch (e) {
       toast.error('Failed to log sale');
       throw e;
@@ -138,13 +190,15 @@ export function MasterProvider({ children }: { children: ReactNode }) {
         catalogItems,
         wishlistItems,
         tripSettings,
+        boughtIds,
         refreshData,
         saveSettings,
         saveItem,
         removeItem,
         saveWishlist,
         saveSale,
-        saveExpense
+        saveExpense,
+        toggleBoughtId
       }}
     >
       {children}

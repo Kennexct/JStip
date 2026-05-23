@@ -20,23 +20,23 @@ export default function App() {
     <MasterProvider>
       <BrowserRouter>
         <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<OwnerDashboard />} />
-          <Route path="explore" element={<ExploreScreen />} />
-          <Route path="profile" element={<ProfileScreen />} />
-          
-          {/* Owner Side Routes */}
-          <Route path="owner" element={<Navigate to="/" replace />} />
-          <Route path="owner/inventory" element={<OwnerInventoryScreen />} />
-          <Route path="owner/list-item" element={<UploadItemScreen />} />
-          <Route path="owner/edit-item/:id" element={<UploadItemScreen />} />
-          <Route path="owner/request/:id" element={<OwnerRequestDetailScreen />} />
-          <Route path="trip-settings" element={<TripSettingsScreen />} />
-          
-          {/* Public Storefront Route */}
-          <Route path="items/:id" element={<StorefrontScreen />} />
-        </Route>
-      </Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<OwnerDashboard />} />
+            <Route path="explore" element={<ExploreScreen />} />
+            <Route path="profile" element={<ProfileScreen />} />
+            
+            {/* Owner Side Routes */}
+            <Route path="owner" element={<Navigate to="/" replace />} />
+            <Route path="owner/inventory" element={<OwnerInventoryScreen />} />
+            <Route path="owner/list-item" element={<UploadItemScreen />} />
+            <Route path="owner/edit-item/:id" element={<UploadItemScreen />} />
+            <Route path="owner/request/:id" element={<OwnerRequestDetailScreen />} />
+            <Route path="trip-settings" element={<TripSettingsScreen />} />
+            
+            {/* Public Storefront Route */}
+            <Route path="items/:id" element={<StorefrontScreen />} />
+          </Route>
+        </Routes>
       </BrowserRouter>
     </MasterProvider>
   );

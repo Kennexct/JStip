@@ -1,17 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
   Camera, 
   ArrowLeft, 
   Check, 
-  ChevronRight, 
-  DollarSign, 
-  Package, 
   Info,
   X,
   Save,
   Share2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +19,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useMaster } from '../context/MasterContext';
+import { isAiConfigured, analyzeProductImage } from '../lib/ai';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription,
+} from '@/components/ui/dialog';
 
 export function UploadItemScreen() {
   const navigate = useNavigate();
@@ -29,6 +36,12 @@ export function UploadItemScreen() {
   const { loading, catalogItems, tripSettings, saveItem } = useMaster();
 
   const [image, setImage] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [publishPrice, setPublishPrice] = useState('');
@@ -72,15 +85,113 @@ export function UploadItemScreen() {
   const margin = Number(publishPrice) - basePriceIdr;
   const marginPercentage = basePriceIdr > 0 ? (margin / basePriceIdr) * 100 : 0;
 
+  useEffect(() => {
+    streamRef.current = stream;
+  }, [stream]);
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  const processImageWithAI = async (dataUrl: string) => {
+    setImage(dataUrl);
+    if (!isAiConfigured() || isEdit) return;
+
+    setIsAnalyzing(true);
+    toast.info('AI is analyzing the product...', { icon: <Sparkles className="h-4 w-4 text-amber-500" /> });
+    
+    try {
+      const result = await analyzeProductImage(dataUrl);
+      if (result) {
+        if (result.name) setName(result.name);
+        if (result.price > 0) {
+          setPrice(result.price.toString());
+          // Auto-calculate a 20% margin for the publish price as a smart default
+          const costIdr = result.price * settings.manualRate;
+          const suggestedPublishPrice = Math.ceil((costIdr * 1.2) / 1000) * 1000;
+          setPublishPrice(suggestedPublishPrice.toString());
+        }
+        toast.success('AI filled in product details!');
+      } else {
+        toast.error('AI could not identify the product.');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('AI analysis failed.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImage(reader.result as string);
+        const dataUrl = reader.result as string;
+        processImageWithAI(dataUrl);
         toast.success('Photo uploaded!');
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err: any) {
+      console.error("Error accessing environment camera, falling back:", err);
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+        setStream(mediaStream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+      } catch (fallbackErr: any) {
+        console.error("Error accessing camera fallback:", fallbackErr);
+        setCameraError("Unable to access camera. Please check permissions or upload a file instead.");
+        toast.error("Camera access failed");
+      }
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+  };
+
+  const handleCapture = () => {
+    if (videoRef.current) {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 640;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        toast.success('Photo captured!');
+        setIsCameraOpen(false);
+        stopCamera();
+        processImageWithAI(dataUrl);
+      }
     }
   };
 
@@ -126,8 +237,21 @@ export function UploadItemScreen() {
           <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Photo Reference</label>
           {image ? (
             <div className="relative aspect-square w-full rounded-3xl overflow-hidden shadow-xl group">
-              <img src={image} alt="Preview" className="w-full h-full object-cover" />
-              <div className="absolute top-4 right-4 flex gap-2">
+              <img src={image} alt="Preview" className={`w-full h-full object-cover transition-all ${isAnalyzing ? 'blur-sm scale-105 brightness-50' : ''}`} />
+              
+              {isAnalyzing && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-10 space-y-3">
+                  <div className="relative">
+                    <div className="absolute inset-0 blur-xl bg-primary/30 rounded-full animate-pulse" />
+                    <Sparkles className="h-12 w-12 text-primary animate-bounce relative z-10" />
+                  </div>
+                  <div className="bg-background/80 backdrop-blur-md px-4 py-2 rounded-full font-bold text-xs uppercase tracking-widest text-primary flex items-center gap-2 shadow-xl border border-primary/20">
+                    <Loader2 className="h-3 w-3 animate-spin" /> AI Analyzing...
+                  </div>
+                </div>
+              )}
+
+              <div className="absolute top-4 right-4 flex gap-2 z-20">
                 <button 
                   onClick={() => setShowShareBanner(true)}
                   className="h-10 w-10 rounded-full bg-primary/80 backdrop-blur-md text-white flex items-center justify-center transition-transform hover:scale-110"
@@ -204,26 +328,37 @@ export function UploadItemScreen() {
               )}
             </div>
           ) : (
-            <div className="w-full">
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                id="item-image-upload"
-                onChange={handleFileChange}
-              />
-              <label 
-                htmlFor="item-image-upload"
-                className="w-full aspect-square border-4 border-dashed rounded-3xl flex flex-col items-center justify-center gap-4 bg-muted/20 hover:bg-muted/40 transition-colors group cursor-pointer"
-              >
-                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-                  <Camera className="h-10 w-10" />
-                </div>
-                <div className="text-center">
-                  <p className="font-bold text-sm">Update Product Photo</p>
-                  <p className="text-xs text-muted-foreground mt-1">Tap to select image</p>
-                </div>
-              </label>
+            <div className="w-full aspect-square border-4 border-dashed rounded-3xl flex flex-col items-center justify-center gap-6 bg-muted/20 p-6">
+              <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                <Camera className="h-10 w-10" />
+              </div>
+              <div className="text-center space-y-1">
+                <p className="font-bold text-sm">Add Product Photo</p>
+                <p className="text-xs text-muted-foreground">Take a picture or choose a file</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
+                <Button 
+                  type="button"
+                  onClick={() => {
+                    setIsCameraOpen(true);
+                    startCamera();
+                  }}
+                  className="rounded-xl font-bold text-xs h-11 bg-primary text-white flex items-center justify-center gap-1.5 shadow-md shadow-primary/10 hover:bg-primary/90"
+                >
+                  <Camera className="h-4 w-4" /> Use Camera
+                </Button>
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  <div className="rounded-xl font-bold text-xs h-11 border-2 border-primary/20 text-primary bg-background hover:bg-muted/30 transition-colors flex items-center justify-center gap-1.5 w-full">
+                    <ImageIcon className="h-4 w-4" /> Upload File
+                  </div>
+                </label>
+              </div>
             </div>
           )}
         </section>
@@ -317,6 +452,82 @@ export function UploadItemScreen() {
           {isEdit ? 'Save Changes' : 'List For Sale'}
         </Button>
       </div>
+
+      {/* Camera Capture Dialog */}
+      <Dialog 
+        open={isCameraOpen} 
+        onOpenChange={(open) => {
+          setIsCameraOpen(open);
+          if (!open) {
+            stopCamera();
+          }
+        }}
+      >
+        <DialogContent className="rounded-3xl border-none max-w-[95%] sm:max-w-md bg-white p-6 flex flex-col items-center gap-4">
+          <DialogHeader className="text-left w-full">
+            <DialogTitle className="text-lg font-black tracking-tight uppercase italic text-primary flex items-center gap-2">
+              <Camera className="h-5 w-5" /> Capture Product Photo
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground font-semibold">
+              Align your product inside the frame and take a photo.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Video Stream Container */}
+          <div className="relative w-full aspect-square bg-slate-900 rounded-2xl overflow-hidden flex items-center justify-center border border-slate-100 shadow-inner">
+            {cameraError ? (
+              <div className="p-6 text-center space-y-3">
+                <Info className="h-8 w-8 text-red-500 mx-auto" />
+                <p className="text-xs font-bold text-red-500">{cameraError}</p>
+              </div>
+            ) : !stream ? (
+              <div className="text-center space-y-3">
+                <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Accessing camera...</p>
+              </div>
+            ) : null}
+
+            {/* Video element for stream preview */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`w-full h-full object-cover ${stream ? 'block' : 'hidden'}`}
+            />
+
+            {/* Pulse Indicator */}
+            {stream && (
+              <div className="absolute top-4 left-4 bg-red-500 text-white font-bold text-[9px] uppercase tracking-widest px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg animate-pulse">
+                <span className="h-1.5 w-1.5 rounded-full bg-white" /> Live
+              </div>
+            )}
+          </div>
+
+          {/* Controls */}
+          <div className="flex gap-3 w-full mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 rounded-xl font-bold text-xs h-12"
+              onClick={() => {
+                setIsCameraOpen(false);
+                stopCamera();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!stream}
+              className="flex-1 rounded-xl font-bold text-xs h-12 gap-1.5 bg-primary text-white shadow-lg shadow-primary/20 hover:bg-primary/90"
+              onClick={handleCapture}
+            >
+              <Camera className="h-4 w-4" /> Take Photo
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

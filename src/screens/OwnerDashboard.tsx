@@ -89,6 +89,7 @@ export function OwnerDashboard() {
   const [draftSaleItems, setDraftSaleItems] = useState<any[]>([]);
   const [isSaleOpen, setIsSaleOpen] = useState(false);
 
+
   // Sync default selected item when catalog items are loaded
   useEffect(() => {
     if (catalogItems.length > 0 && !selectedItemId) {
@@ -738,7 +739,7 @@ export function OwnerDashboard() {
                           };
                           
                           try {
-                            await saveWishlist(newWish);
+                             await saveWishlist(newWish);
                             
                             const newCatItem = {
                               id: newId,

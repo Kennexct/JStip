@@ -36,7 +36,6 @@ const CURRENCIES = [
 
 export function TripSettingsScreen() {
   const navigate = useNavigate();
-  
   const { loading, tripSettings, saveSettings } = useMaster();
 
   const [origin, setOrigin] = useState('');
@@ -50,7 +49,6 @@ export function TripSettingsScreen() {
     updatedAt: new Date().toISOString()
   });
   const [payoutCurrency, setPayoutCurrency] = useState('IDR');
-
   // Sync inputs with master context once loaded
   useEffect(() => {
     if (!loading && tripSettings) {

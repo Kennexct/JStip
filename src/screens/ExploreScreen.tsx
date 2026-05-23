@@ -54,26 +54,14 @@ export function ExploreScreen() {
     loading,
     sales,
     wishlistItems: myWishlist,
-    saveWishlist
+    saveWishlist,
+    boughtIds,
+    toggleBoughtId
   } = useMaster();
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewMode, setViewMode] = useState<'board' | 'checklist'>('board');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
-
-  // Checklist Check/Uncheck states persistence
-  const [boughtIds, setBoughtIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('jastip_checklist_bought_states');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      } catch (e) {
-        // ignore
-      }
-    }
-    return [];
-  });
 
   // Track active popup elements
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
@@ -86,6 +74,7 @@ export function ExploreScreen() {
   const [formCustomer, setFormCustomer] = useState('');
   const [formImage, setFormImage] = useState<string>('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -143,16 +132,12 @@ export function ExploreScreen() {
   };
 
   const handleToggleChecklistBoughtState = (id: string) => {
-    let updated: string[];
     if (boughtIds.includes(id)) {
-      updated = boughtIds.filter(x => x !== id);
       toast.info('Marked item as pending purchase');
     } else {
-      updated = [...boughtIds, id];
       toast.success('Confirmed item as acquired');
     }
-    setBoughtIds(updated);
-    localStorage.setItem('jastip_checklist_bought_states', JSON.stringify(updated));
+    toggleBoughtId(id);
   };
 
   // Status Style badge coloring helper
@@ -323,38 +308,12 @@ export function ExploreScreen() {
 
   const checklistItems = getMergedChecklistItems();
 
-  // Helper: auto-generate default true checking state for old sales so the user starts off nicely
-  // but can toggle back and forth
   const isItemChecked = (itemId: string, itemType: 'wishlist' | 'sale') => {
-    // If the ID is explicitly recorded in boughtIds state
-    if (boughtIds.includes(itemId)) {
-      return true;
-    }
-    // For sales items, automatically assume checked (bought) unless user opted-out by toggling
-    if (itemType === 'sale' && !localStorage.getItem(`opt_out_sale_${itemId}`)) {
-      return true;
-    }
-    return false;
+    return boughtIds.includes(itemId);
   };
 
   const handleToggleCustomChecklist = (itemId: string, itemType: 'wishlist' | 'sale') => {
-    if (itemType === 'sale') {
-      const storageKey = `opt_out_sale_${itemId}`;
-      const optOutExists = localStorage.getItem(storageKey);
-      if (optOutExists) {
-        // If it was opted out (unchecked), remove opt-out so it is checked again
-        localStorage.removeItem(storageKey);
-        toast.success('Confirmed item as acquired');
-      } else {
-        // Mark as opted out (unchecked)
-        localStorage.setItem(storageKey, 'true');
-        toast.info('Marked item as pending purchase');
-      }
-      // Trigger simple state bypass force update
-      setBoughtIds(prev => [...prev]);
-    } else {
-      handleToggleChecklistBoughtState(itemId);
-    }
+    handleToggleChecklistBoughtState(itemId);
   };
 
   // Calculate stats for checklist completed items
